@@ -330,29 +330,40 @@ export async function POST(req: NextRequest) {
 示例：如果对话历史中显示"第4天：自然人文 • 上午：玄武湖公园 • 中午：湖南路美食街 • 下午：鸡鸣寺+台城 • 晚上：狮子桥夜市"，
 当用户询问"第4天的具体行程安排"时，你应该基于玄武湖公园、湖南路美食街、鸡鸣寺、台城、狮子桥夜市这些地点来制定详细安排。
 
-如果是新的旅游规划：
-标题：[简洁的行程标题]
-[根据天数调整详细程度的每日安排]
-[如果是4天以上行程，在结尾添加互动提示]
-关键景点：[所有景点名称，用逗号分隔]`;
+如果是新的旅游规划，请严格按照下列模板输出（括号内内容请替换为实际信息）：
+**（标题，例如南京三日文化之旅）**
+每日安排
+第1天：上午……；下午……；晚上……
+第2天：……
+[如有更多天数按顺序继续，保持“第X天：”格式，整行不要加粗]
+【实用贴士】
+- 交通建议：……
+- 最佳季节：……
+- 其他提示：……（可以是必吃美食或穿着/预约建议，≤20字）
+【费用预算】
+- 门票：约X元/人
+- 交通：约X元/人
+- 餐饮：约X元/人
+- 住宿：约X元/人
+- 总计：约X元/人
+关键景点：景点1, 景点2, 景点3（逗号分隔）
+
+务必包含上述所有段落，除标题外不要再使用粗体或额外 Markdown 样式，整体控制在500字以内，避免冗长。`;
       
-      // 构建包含上下文的消息历史
       const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
         { role: "system", content: systemPrompt },
       ];
 
-      // 如果有聊天历史，添加到消息中（不限制数量，测试完整上下文效果）
       if (chatHistory && chatHistory.length > 0) {
         for (const msg of chatHistory) {
-          if (msg.type === 'user') {
+          if (msg.type === "user") {
             messages.push({ role: "user", content: msg.content });
-          } else if (msg.type === 'ai') {
+          } else if (msg.type === "ai") {
             messages.push({ role: "assistant", content: msg.content });
           }
         }
       }
 
-      // 添加当前用户消息
       messages.push({ role: "user", content: prompt });
 
       console.log("发送AI请求 - 生成行程规划和景点...");
@@ -360,35 +371,36 @@ export async function POST(req: NextRequest) {
       console.log("消息历史详情:", {
         总消息数: messages.length,
         聊天历史条数: chatHistory?.length || 0,
-        system消息: messages.filter(m => m.role === 'system').length,
-        user消息: messages.filter(m => m.role === 'user').length,
-        assistant消息: messages.filter(m => m.role === 'assistant').length,
-        预估token数: messages.reduce((total, msg) => total + msg.content.length, 0)
+        system消息: messages.filter((m) => m.role === "system").length,
+        user消息: messages.filter((m) => m.role === "user").length,
+        assistant消息: messages.filter((m) => m.role === "assistant").length,
+        预估tokens: messages.reduce((total, msg) => total + msg.content.length, 0),
       });
-      
-      // 打印聊天历史内容用于调试
+
       if (chatHistory && chatHistory.length > 0) {
         console.log("聊天历史内容:");
         chatHistory.forEach((msg, index) => {
           console.log(`${index + 1}. ${msg.type}: ${msg.content.substring(0, 100)}...`);
         });
       }
-      
-      const response = await openai.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.7, // 平衡创造性和一致性
-        // 移除max_tokens限制，让AI充分发挥
-      }, {
-        timeout: 10000, // 10秒超时，确保长天数行程也能及时响应
-      });
-      
+
+      const response = await openai.chat.completions.create(
+        {
+          model,
+          messages,
+          temperature: 0.7,
+        },
+        {
+          timeout: 10000,
+        }
+      );
+
       const responseText = response.choices?.[0]?.message?.content || "";
-      
-      // 检测是否为上下文查询（详细询问某一天的行程安排）
-      const isContextualQuery = responseText.includes("【详细规划】") || 
-                                (!responseText.includes("标题：") && !responseText.includes("关键景点："));
-      
+
+      const isContextualQuery =
+        responseText.includes("【详细规划】") ||
+        (!responseText.includes("标题") && !responseText.includes("关键景点"));
+
       let planTitle: string;
       let planText: string;
       let keywords: string[] = [];
@@ -404,14 +416,19 @@ export async function POST(req: NextRequest) {
         console.log("响应文本前100字符:", responseText.substring(0, 100));
       } else {
         // 标准新规划：解析标准格式
+        const boldTitleMatch = responseText.match(/^\s*\*\*(.+?)\*\*/m);
         const titleMatch = responseText.match(/标题[:：]\s*(.+)/);
         const keywordMatch = responseText.match(/关键景点[:：]\s*(.+)/);
         
-        // 提取完整的规划内容（从推荐景点到关键景点之间的所有内容）
-        const planMatch = responseText.match(/📍\s*推荐景点[:：]([\s\S]*?)关键景点[:：]/);
+        // 提取完整的规划内容（从每日安排到关键景点之间的所有内容）
+        const planMatch = responseText.match(/每日安排([\s\S]*?)关键景点[:：]/);
         
-        planTitle = titleMatch?.[1]?.trim() || "旅游行程规划";
-        planText = planMatch?.[1]?.trim() || responseText.replace(/标题：[^\n]*\n/, '').replace(/关键景点：[^\n]*/, '').trim();
+        planTitle = (boldTitleMatch?.[1] || titleMatch?.[1] || "旅游行程规划").trim();
+        planText = planMatch ? `每日安排${planMatch[1]}`.trim() : responseText
+          .replace(/^\s*\*\*(.+?)\*\*\s*/m, '')
+          .replace(/标题[:：][^\n]*\n?/, '')
+          .replace(/关键景点[:：][^\n]*/, '')
+          .trim();
         const keywordText = keywordMatch?.[1]?.trim() || "";
         
         keywords = keywordText
