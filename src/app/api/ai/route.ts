@@ -404,11 +404,11 @@ export async function POST(req: NextRequest) {
         console.log("响应文本前100字符:", responseText.substring(0, 100));
       } else {
         // 标准新规划：解析标准格式
-        const titleMatch = responseText.match(/标题：(.+)/);
-        const keywordMatch = responseText.match(/关键景点：(.+)/);
+        const titleMatch = responseText.match(/标题[:：]\s*(.+)/);
+        const keywordMatch = responseText.match(/关键景点[:：]\s*(.+)/);
         
         // 提取完整的规划内容（从推荐景点到关键景点之间的所有内容）
-        const planMatch = responseText.match(/📍 推荐景点：([\s\S]*?)关键景点：/);
+        const planMatch = responseText.match(/📍\s*推荐景点[:：]([\s\S]*?)关键景点[:：]/);
         
         planTitle = titleMatch?.[1]?.trim() || "旅游行程规划";
         planText = planMatch?.[1]?.trim() || responseText.replace(/标题：[^\n]*\n/, '').replace(/关键景点：[^\n]*/, '').trim();
@@ -425,7 +425,12 @@ export async function POST(req: NextRequest) {
       }
       
       console.log("解析的关键词:", keywords);
-      
+
+      if (!keywords || keywords.length === 0) {
+        keywords = extractBasicKeywords(prompt);
+        console.log("关键景点解析失败，使用降级关键词:", keywords);
+      }
+
       // 清理文本中的markdown格式
       const cleanedTitle = cleanMarkdown(planTitle);
       const cleanedDescription = cleanMarkdown(planText);
